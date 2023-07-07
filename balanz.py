@@ -86,7 +86,11 @@ def on_close(ws, status, message):
 
 
 def get_quotes(request):
+
     global msg
+    global data
+
+    data = {}
 
     msg = json.dumps({"panel": 6, "token": access_token})
 
