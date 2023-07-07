@@ -97,7 +97,7 @@ def get_quotes(request):
                                  header=wss_header)
 
     wst = threading.Thread(target=wss.run_forever)
-    wst.daemon = True
+    wst.daemon = False
     wst.start()
     wst.join(timeout=30)
 
