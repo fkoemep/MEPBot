@@ -62,6 +62,7 @@ def on_message(ws, message):
 
     if {'al30d_ask', 'al30_bid', 'gd30d_ask', 'gd30_bid'}.issubset(data.keys()):
         print(data)
+        ws.on_close = None #otherwise we'd have to call login() every time
         ws.keep_running = False
 
 
@@ -76,7 +77,7 @@ def on_error(ws, exception):
 
 
 def on_close(ws, status, message):
-    login()
+    login() # in case the authtoken expires
     print('Closed stream')
     print('status' + str(status))
     print('message' + str(message))
@@ -100,7 +101,6 @@ def get_quotes(request):
     wst.daemon = False
     wst.start()
     wst.join(timeout=30)
-
     # time.sleep(30)
     #
     # if wss.keep_running:
