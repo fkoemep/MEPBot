@@ -61,6 +61,7 @@ def on_message(ws, message):
             data['gd30_bid'] = message['pc'] * 100
 
     if {'al30d_ask', 'al30_bid', 'gd30d_ask', 'gd30_bid'}.issubset(data.keys()):
+        print(data)
         ws.keep_running = False
 
 
@@ -98,11 +99,12 @@ def get_quotes(request):
     wst = threading.Thread(target=wss.run_forever)
     wst.daemon = True
     wst.start()
+    wst.join(timeout=30)
 
-    time.sleep(30)
-
-    if wss.keep_running:
-        wss.keep_running = False
+    # time.sleep(30)
+    #
+    # if wss.keep_running:
+    #     wss.keep_running = False
 
     return json.dumps(data)
 
