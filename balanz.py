@@ -60,7 +60,14 @@ def on_message(ws, message):
         if message['ticker'] == 'GD30':
             data['gd30_bid'] = message['pc'] * 100
 
-    if {'al30d_ask', 'al30_bid', 'gd30d_ask', 'gd30_bid'}.issubset(data.keys()):
+    if message['plazo'] == '48hs':
+        if message['ticker'] == 'AL30':
+            data['al30_ask_48hs'] = message['pv'] * 100
+        if message['ticker'] == 'AL30D':
+            data['al30d_bid_48hs'] = message['pc'] * 100
+
+
+    if {'al30d_ask', 'al30_bid', 'gd30d_ask', 'gd30_bid', 'al30_ask_48hs', 'al30d_bid_48hs'}.issubset(data.keys()):
         print(data)
         ws.on_close = None #otherwise we'd have to call login() every time
         ws.keep_running = False
@@ -105,6 +112,10 @@ def get_quotes(request):
     wst.daemon = True
     wst.start()
     wst.join(timeout=30)
+
+    # if wst.is_alive():
+    #     print('Timeout')
+    #     wss.close()
     # time.sleep(30)
     #
     # if wss.keep_running:
