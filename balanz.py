@@ -51,6 +51,8 @@ def login():
 def on_message(ws, message):
     message = json.loads(message)
     if message['plazo'] == 'CI':
+        if message['ticker'] == 'AL30':
+            data['al30_ask'] = message['pv'] * 100
         if message['ticker'] == 'AL30D':
             data['al30d_ask'] = message['pv'] * 100
         if message['ticker'] == 'AL30':
@@ -61,8 +63,6 @@ def on_message(ws, message):
             data['gd30_bid'] = message['pc'] * 100
 
     if message['plazo'] == '48hs':
-        if message['ticker'] == 'AL30':
-            data['al30_ask_48hs'] = message['pv'] * 100
         if message['ticker'] == 'AL30D':
             data['al30d_bid_48hs'] = message['pc'] * 100
 
