@@ -19,7 +19,22 @@ user = os.environ.get('balanzuser')
 
 password = os.environ.get('balanzpassword')
 
-payload = {"data": {"user": user, "pass": password}}
+payload = {
+    "user": user,
+    "pass": password,
+    "source": "WebV2",
+    "VersionSO": "10",
+    "VersionApp": "2.11.0",
+    "TipoDispositivo": "Web",
+    "SistemaOperativo": "Windows",
+    "NombreDispositivo": "Edge 120.0.0.0",
+    "idDispositivo": "84a22d3c-5165-4ed0-b061-0f8b8ddf09d0",}
+
+payload_init = {
+    "user": user,
+    "source": "WebV2",}
+
+params = {'avoidAuthRedirect': 'true'}
 
 user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.74 Safari/537.36 Edg/99.0.1150.46'
 
@@ -36,8 +51,13 @@ msg = None
 def login():
     global access_token, access_token_doc
 
-    r = session.post('https://clientes.balanz.com/api/v1/login', json=payload,
-                     headers=login_headers)
+    pre_login = session.post('https://clientes.balanz.com/api/v1/auth/init', json=payload_init,
+                     headers=login_headers, params=params)
+
+    payload['nonce'] = pre_login.json()['nonce']
+
+    r = session.post('https://clientes.balanz.com/api/v1/auth/login', json=payload,
+                     headers=login_headers, params=params)
 
     access_token = r.json()['AccessToken']
 
@@ -52,7 +72,7 @@ def on_message(ws, message):
     message = json.loads(message)
     if message['plazo'] == 'CI':
         if message['ticker'] == 'AL30':
-            data['al30_ask'] = message['pv'] * 100
+            data['al30_ask'] = message['pv'] * 100 
         if message['ticker'] == 'AL30D':
             data['al30d_ask'] = message['pv'] * 100
         if message['ticker'] == 'AL30':
