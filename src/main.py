@@ -26,9 +26,9 @@ session = requests.Session()
 
 socket = f'wss://clientes.balanz.com/websocket'
 
-user = os.environ.get('balanzuser')
+user = os.environ.get('BALANZUSER')
 
-password = os.environ.get('balanzpassword')
+password = os.environ.get('BALANZPASSWORD')
 
 payload = {
     "user": user,
