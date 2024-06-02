@@ -1,0 +1,44 @@
+
+steps:
+
+  # Create a service account for the job, enable the necessary APIs, and set the IAM policies
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args: ['./deploy/scripts/enableAPISAndCreateUser.sh','${_SERVICE_ACCOUNT_NAME}','${PROJECT_ID}']
+
+  # Adds alerts to build and cloud run
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args: ['./deploy/scripts/createAlerts.sh','${_FUNCTION_NAME}','${_EMAIL_ADDRESS}']
+
+  # Deploy container image to Cloud Functions
+  - name: gcr.io/cloud-builders/gcloud
+    args:
+      - functions
+      - deploy
+      - $_FUNCTION_NAME
+      - '--source=./src'
+      - '--trigger-http'
+      - '--runtime=python312'
+      - '--region=$_FUNCTION_REGION'
+      - '--update-build-env-vars=GOOGLE_FUNCTION_SOURCE=main.py'
+      - '--entry-point=get_quotes'
+      - '--timeout=45s'
+        --set-env-vars=dni=$_DNI,user=$_USER,password=$_PASSWORD,broker_id=$_BROKERID,balanzuser=$_BALANZUSER,balanzpassword=$_BALANZPASSWORD
+      - '--min-instances=0'
+      - '--gen2'
+      - '--run-service-account=$_SERVICE_ACCOUNT_NAME@$PROJECT_ID.iam.gserviceaccount.com'
+      -
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  # Replace with the desired deployment region (I recommend us-central1)
+  _FUNCTION_REGION: 'us-central1'
+  # Replace with the desired Cloud Function name (job name may only start with a letter and contain up to 63 lowercase letters, numbers or hyphens)
+  _FUNCTION_NAME: 'MEPBot'
+  # Replace with the desired service account's email address (it's something like username@projectname-projectnumber.iam.gserviceaccount.com
+  _SERVICE_ACCOUNT_NAME: 'mep-bot'
+  # Uncomment the following substitutions block to finish setting up your job:
+#  # Replace with the desired email address to get notifications from the alerts
+#  _EMAIL_ADDRESS: ''

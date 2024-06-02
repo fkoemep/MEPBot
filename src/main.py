@@ -1,15 +1,23 @@
 import os
 import threading
-import time
 
 import requests
 import websocket
 import json
 from google.cloud import firestore
+from google.oauth2 import service_account
+
 
 data = {}
 
-db = firestore.Client()
+# gets the credentials from the service account file if running locally and the file exists
+
+credentials = None
+
+if os.path.exists('./cloudbuild-service-account.json'):
+    credentials = service_account.Credentials.from_service_account_file('./cloudbuild-service-account.json')
+
+db = firestore.Client(credentials=credentials)
 
 session = requests.Session()
 
@@ -82,7 +90,7 @@ def on_message(ws, message):
         if message['ticker'] == 'GD30':
             data['gd30_bid'] = message['pc'] * 100
 
-    if message['plazo'] == '48hs':
+    if message['plazo'] == '24hs':
         if message['ticker'] == 'AL30D':
             data['al30d_bid_48hs'] = message['pc'] * 100
 

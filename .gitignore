@@ -1,0 +1,5 @@
+/.idea/MEPBot.iml
+/.idea/vcs.xml
+/src/gcp_compute_engine_process.py
+/.gitignore
+/cloudbuild-service-account.json
