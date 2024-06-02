@@ -7,6 +7,9 @@ import json
 from google.cloud import firestore
 from google.oauth2 import service_account
 
+from flask import Flask
+
+app = Flask(__name__)
 
 data = {}
 
@@ -36,11 +39,11 @@ payload = {
     "TipoDispositivo": "Web",
     "SistemaOperativo": "Windows",
     "NombreDispositivo": "Edge 120.0.0.0",
-    "idDispositivo": "84a22d3c-5165-4ed0-b061-0f8b8ddf09d0",}
+    "idDispositivo": "84a22d3c-5165-4ed0-b061-0f8b8ddf09d0", }
 
 payload_init = {
     "user": user,
-    "source": "WebV2",}
+    "source": "WebV2", }
 
 params = {'avoidAuthRedirect': 'true'}
 
@@ -60,7 +63,7 @@ def login():
     global access_token, access_token_doc
 
     pre_login = session.post('https://clientes.balanz.com/api/v1/auth/init', json=payload_init,
-                     headers=login_headers, params=params)
+                             headers=login_headers, params=params)
 
     payload['nonce'] = pre_login.json()['nonce']
 
@@ -70,17 +73,14 @@ def login():
     access_token = r.json()['AccessToken']
 
     if access_token is not None and access_token != '':
-        access_token_doc.set(
-            {
-                u'value': access_token
-            }, merge=True)
+        access_token_doc.set({u'value': access_token}, merge=True)
 
 
 def on_message(ws, message):
     message = json.loads(message)
     if message['plazo'] == 'CI':
         if message['ticker'] == 'AL30':
-            data['al30_ask'] = message['pv'] * 100 
+            data['al30_ask'] = message['pv'] * 100
         if message['ticker'] == 'AL30D':
             data['al30d_ask'] = message['pv'] * 100
         if message['ticker'] == 'AL30':
@@ -94,10 +94,9 @@ def on_message(ws, message):
         if message['ticker'] == 'AL30D':
             data['al30d_bid_48hs'] = message['pc'] * 100
 
-
     if {'al30d_ask', 'al30_bid', 'gd30d_ask', 'gd30_bid', 'al30_ask_48hs', 'al30d_bid_48hs'}.issubset(data.keys()):
         print(data)
-        ws.on_close = None #otherwise we'd have to call login() every time
+        ws.on_close = None  #otherwise we'd have to call login() every time
         ws.keep_running = False
 
 
@@ -112,7 +111,7 @@ def on_error(ws, exception):
 
 
 def on_close(ws, status, message):
-    login() # in case the authtoken expires
+    login()  # in case the authtoken expires
     print('Closed stream')
     print('status' + str(status))
     print('message' + str(message))
@@ -121,7 +120,6 @@ def on_close(ws, status, message):
 
 
 def get_quotes(request):
-
     global msg
     global data
 
@@ -152,6 +150,11 @@ def get_quotes(request):
     return json.dumps(data)
 
 
-if __name__ == '__main__':
+@app.route("/")
+def main_function():
     result = get_quotes(None)
-    print(result)
+    return result
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
