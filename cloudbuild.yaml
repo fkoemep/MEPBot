@@ -1,4 +1,3 @@
-
 steps:
 
   # Create a service account for the job, enable the necessary APIs, and set the IAM policies
@@ -28,7 +27,7 @@ steps:
       - '--min-instances=0'
       - '--gen2'
       - '--run-service-account=$_SERVICE_ACCOUNT_NAME@$PROJECT_ID.iam.gserviceaccount.com'
-      -
+
 options:
   logging: CLOUD_LOGGING_ONLY
 
