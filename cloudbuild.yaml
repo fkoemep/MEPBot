@@ -23,10 +23,12 @@ steps:
       - '--update-build-env-vars=GOOGLE_FUNCTION_SOURCE=main.py'
       - '--entry-point=get_quotes'
       - '--timeout=45s'
-      - '--set-env-vars=dni=$_DNI,user=$_USER,password=$_PASSWORD,broker_id=$_BROKERID,balanzuser=$_BALANZUSER,balanzpassword=$_BALANZPASSWORD'
+      - '--set-env-vars=balanzuser=$_BALANZUSER,balanzpassword=$_BALANZPASSWORD'
       - '--min-instances=0'
       - '--gen2'
       - '--run-service-account=$_SERVICE_ACCOUNT_NAME@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--memory=256MB'
+      - '--cpu=.5'
 
 options:
   logging: CLOUD_LOGGING_ONLY
