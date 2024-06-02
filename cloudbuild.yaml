@@ -67,7 +67,7 @@ substitutions:
   # Replace with the desired Cloud Run Jobs name (job name may only start with a letter and contain up to 63 lowercase letters, numbers or hyphens)
   _RUN_NAME: 'mep-bot'
   # Replace with the desired Artifact Repository name (needs to be lowercase and contain only letters, numbers, and hyphens)
-  _ARTIFACT_REPO_NAME: 'docker'
+  _ARTIFACT_REPO_NAME: 'mep-bot'
   # Replace with the desired service account's email address (it's something like username@projectname-projectnumber.iam.gserviceaccount.com
   _SERVICE_ACCOUNT_NAME: 'mep-bot'
 
