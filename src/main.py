@@ -38,7 +38,7 @@ payload = {
     "VersionApp": "2.11.0",
     "TipoDispositivo": "Web",
     "SistemaOperativo": "Windows",
-    "NombreDispositivo": "Edge 120.0.0.0",
+    "NombreDispositivo": "Edge 125.0.0.0",
     "idDispositivo": "84a22d3c-5165-4ed0-b061-0f8b8ddf09d0", }
 
 payload_init = {
@@ -47,7 +47,7 @@ payload_init = {
 
 params = {'avoidAuthRedirect': 'true'}
 
-user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.74 Safari/537.36 Edg/99.0.1150.46'
+user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0'
 
 login_headers = {'Content-type': 'application/json', 'Accept': 'application/json', 'User-Agent': user_agent,
                  'Referer': 'https://clientes.balanz.com/'}
@@ -92,9 +92,9 @@ def on_message(ws, message):
 
     if message['plazo'] == '24hs':
         if message['ticker'] == 'AL30D':
-            data['al30d_bid_48hs'] = message['pc'] * 100
+            data['al30d_bid_24hs'] = message['pc'] * 100
 
-    if {'al30d_ask', 'al30_bid', 'gd30d_ask', 'gd30_bid', 'al30_ask_48hs', 'al30d_bid_48hs'}.issubset(data.keys()):
+    if {'al30d_ask', 'al30_bid', 'gd30d_ask', 'gd30_bid', 'al30_ask_24hs', 'al30d_bid_24hs'}.issubset(data.keys()):
         print(data)
         ws.on_close = None  #otherwise we'd have to call login() every time
         ws.keep_running = False
