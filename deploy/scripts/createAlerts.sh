@@ -21,7 +21,7 @@ list_channels
 
 if [ "$create_channel" = true ] ; then
   echo "Creating monitoring channel ${_JOB_NAME} with email address ${_EMAIL_ADDRESS}"
-  gcloud beta monitoring channels create --display-name="${_JOB_NAME}" --type=email --channel-labels=email_address="$_EMAIL_ADDRESS"
+  gcloud beta monitoring channels create --display-name="${_JOB_NAME}" --type=email --channel-labels=email_address="${_EMAIL_ADDRESS}"
   list_channels
 else
   echo "Monitoring channel already exists."
