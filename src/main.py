@@ -81,20 +81,46 @@ def on_message(ws, message):
     if message['plazo'] == 'CI':
         if message['ticker'] == 'AL30':
             data['al30_ask'] = message['pv'] * 100
-        if message['ticker'] == 'AL30D':
-            data['al30d_ask'] = message['pv'] * 100
         if message['ticker'] == 'AL30':
             data['al30_bid'] = message['pc'] * 100
-        if message['ticker'] == 'GD30D':
-            data['gd30d_ask'] = message['pv'] * 100
+
+        if message['ticker'] == 'AL30D':
+            data['al30d_ask'] = message['pv'] * 100
+        if message['ticker'] == 'AL30D':
+            data['al30d_bid'] = message['pc'] * 100
+
+        if message['ticker'] == 'GD30':
+            data['gd30_ask'] = message['pv'] * 100
         if message['ticker'] == 'GD30':
             data['gd30_bid'] = message['pc'] * 100
 
+        if message['ticker'] == 'GD30D':
+            data['gd30d_ask'] = message['pv'] * 100
+        if message['ticker'] == 'GD30D':
+            data['gd30d_bid'] = message['pc'] * 100
+
     if message['plazo'] == '24hs':
+        if message['ticker'] == 'AL30':
+            data['al30_ask_24hs'] = message['pv'] * 100
+        if message['ticker'] == 'AL30':
+            data['al30_bid_24hs'] = message['pc'] * 100
+
+        if message['ticker'] == 'AL30D':
+            data['al30d_ask_24hs'] = message['pv'] * 100
         if message['ticker'] == 'AL30D':
             data['al30d_bid_24hs'] = message['pc'] * 100
 
-    if {'al30d_ask', 'al30_bid', 'gd30d_ask', 'gd30_bid', 'al30_ask_24hs', 'al30d_bid_24hs'}.issubset(data.keys()):
+        if message['ticker'] == 'GD30':
+            data['gd30_ask_24hs'] = message['pv'] * 100
+        if message['ticker'] == 'GD30':
+            data['gd30_bid_24hs'] = message['pc'] * 100
+
+        if message['ticker'] == 'GD30D':
+            data['gd30d_ask_24hs'] = message['pv'] * 100
+        if message['ticker'] == 'GD30D':
+            data['gd30d_bid_24hs'] = message['pc'] * 100
+
+    if {'al30_ask', 'al30_bid', 'al30d_ask', 'al30d_bid', 'gd30_ask', 'gd30_bid', 'gd30d_ask', 'gd30d_bid', 'al30_ask_24hs', 'al30_bid_24hs', 'al30d_ask_24hs', 'al30d_bid_24hs', 'gd30_ask_24hs', 'gd30_bid_24hs', 'gd30d_ask_24hs', 'gd30d_bid_24hs'}.issubset(data.keys()):
         print(data)
         ws.on_close = None  #otherwise we'd have to call login() every time
         ws.keep_running = False
