@@ -20,6 +20,23 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     #Selecting the alpine image, which is slimmer and runs with chromium. You can change it to slim if you want.
     args: ['build', '-t', '$_RUN_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO_NAME/$_RUN_NAME', '.']
+  
+#  - name: "gcr.io/cloud-builders/docker"
+#    entrypoint: "bash"
+#    args:
+#      - "-c"
+#      - |
+#        curl -L -o ds.tar.gz https://github.com/mintoolkit/mint/releases/download/1.41.7/dist_linux.tar.gz;
+#        tar -xvf ds.tar.gz;
+#        mv dist_linux/mint /usr/local/bin/;
+#        mv dist_linux/mint-sensor /usr/local/bin/;
+#        mint build \
+#          --include-workdir=true \
+#          --http-probe=false \
+#          --sensor-ipc-mode proxy \
+#          --sensor-ipc-endpoint $(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}' | cut -f1) \
+#          --tag ${_RUN_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO_NAME}/${_RUN_NAME} \
+#          ${_RUN_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO_NAME}/${_RUN_NAME};
 
   # Push the container image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
@@ -39,7 +56,7 @@ steps:
       - '--service-account'
       - '$_SERVICE_ACCOUNT_NAME@$PROJECT_ID.iam.gserviceaccount.com'
       - '--concurrency'
-      - '1'
+      - 'default'
       - '--max-instances'
       - '1'
       - '--min-instances'
@@ -48,10 +65,17 @@ steps:
       - '50s'
       - '--execution-environment'
       - 'gen2'
+      - '--memory'
+      - '2Gi'
       - '--no-cpu-boost'
       - '--cpu-throttling'
+      - '--no-allow-unauthenticated'
+      - '--no-allow-unencrypted-build'
+      - '--session-affinity'
+      - '--automatic-updates'
+      - '--use-http2'
       - '--set-env-vars'
-      - 'BALANZPASSWORD=$_BALANZPASSWORD,BALANZUSER=$_BALANZUSER'
+      - 'BALANZ_PASSWORD=$_BALANZ_PASSWORD,BALANZ_USER=$_BALANZ_USER'
 
 options:
   logging: CLOUD_LOGGING_ONLY

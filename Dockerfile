@@ -1,20 +1,21 @@
-# IMPORTANT: if you move this file, make the necessary changes in the cloudbuild.yaml file
+FROM rust:1.88-alpine AS builder
 
-FROM python:3.12-alpine
+WORKDIR /app
+COPY . .
 
-ENV PYTHONUNBUFFERED True
+RUN apk add --no-cache musl-dev pkgconfig && cargo build --release
 
-# Copy local code to the container image.
-ENV APP_HOME=/app PORT=8080
-WORKDIR $APP_HOME
-COPY . ./
+RUN apk add --no-cache upx ca-certificates && upx /app/target/release/mep-bot
 
-# Install production dependencies.
-RUN pip install --no-cache-dir -r src/requirements.txt
+FROM scratch
 
-# Run the web service on container startup. Here we use the gunicorn
-# webserver, with one worker process and 8 threads.
-# For environments with multiple CPU cores, increase the number of workers
-# to be equal to the cores available.
-# Timeout is set to 0 to disable the timeouts of the workers to allow Cloud Run to handle instance scaling.
-CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 main:app --chdir ./src
+WORKDIR /app
+ENV PORT=8080
+
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /app/target/release/mep-bot ./app
+COPY --from=builder /app/*.json ./
+
+EXPOSE 8080
+
+CMD ["./app"]

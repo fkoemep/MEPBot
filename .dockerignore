@@ -123,3 +123,5 @@ dist
 /venv/
 /deploy/
 cloudbuild.yaml
+/target
+Dockerfile
