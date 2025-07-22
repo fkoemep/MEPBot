@@ -1,3 +1,4 @@
+use std::error;
 use actix_web::{App, HttpServer, ResponseError, http::StatusCode};
 use std::env;
 use actix_web::rt::signal;
@@ -5,7 +6,7 @@ use thiserror::Error;
 use log::error;
 use firestore::{errors::FirestoreError};
 mod services;
-use services::balanz::balanz::init_state as balanz_init_state;
+use services::balanz::balanz_config::init_state as balanz_init_state;
 use services::balanz::balanz::scope as balanz_scope;
 
 #[derive(Error, Debug)]
@@ -52,7 +53,7 @@ impl ResponseError for AppError {
 
 
 #[actix_web::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn error::Error>> {
     // For local development, load .env file if it exists.
     dotenv::dotenv().ok();
     // Initialize logger
