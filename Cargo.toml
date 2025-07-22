@@ -12,6 +12,11 @@ futures-util = "0.3"
 tokio-tungstenite = { version = "0.27.0", features = ["rustls-tls-webpki-roots"] }
 url = "2"
 firestore = "0.46.0"
+thiserror = "2.0" # Add this
+serde = { version = "1.0", features = ["derive"] } # Add derive feature
+dotenv = "0.15"
+env_logger = "0.11"
+log = "0.4.27"
 
 [profile.release]
 strip = true  # Automatically strip symbols from the binary.

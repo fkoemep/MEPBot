@@ -1,329 +1,401 @@
-use tokio::time::{sleep, Duration};
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use futures_util::{SinkExt, StreamExt};
-use reqwest::Client;
+use actix_web::{web, App, HttpResponse, HttpServer, ResponseError, http::StatusCode};
+use reqwest::{header, Client};
+use serde::{Deserialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::env;
-use std::sync::{Arc, Mutex};
-use tokio::sync::OnceCell;
-use tokio_tungstenite::connect_async;
-use url::Url;
-use firestore::*;
+use std::time::Duration;
+use thiserror::Error;
+use tokio::sync::RwLock;
+use tokio::time::sleep;
+use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
+use firestore::{errors::FirestoreError, FirestoreDb, FirestoreResult};
+use futures_util::StreamExt;
+use futures_util::sink::SinkExt;
 use tokio_tungstenite::tungstenite::Utf8Bytes;
 
-type SharedData = Arc<Mutex<HashMap<String, f64>>>;
+#[derive(Error, Debug)]
+enum AppError {
+    #[error("Configuration error: {0}")]
+    Config(#[from] env::VarError),
+    #[error("HTTP request error: {0}")]
+    Reqwest(#[from] reqwest::Error),
+    #[error("JSON serialization/deserialization error: {0}")]
+    Serde(#[from] serde_json::Error),
+    #[error("Firestore error: {0}")]
+    Firestore(#[from] FirestoreError),
+    #[error("WebSocket error: {0}")]
+    WebSocket(#[from] tokio_tungstenite::tungstenite::Error),
+    #[error("URL parsing error: {0}")]
+    UrlParse(#[from] url::ParseError),
 
-static ACCESS_TOKEN: OnceCell<String> = OnceCell::const_new();
-static FIRESTORE: OnceCell<FirestoreDb> = OnceCell::const_new();
+    #[error("Login failed: Invalid credentials or blocked user")]
+    BadCredentials,
+    #[error("Login failed: Temporary server error")]
+    LoginServerError,
+    #[error("Login failed: Could not parse access token from response")]
+    LoginResponseMissingToken,
+    #[error("Login failed: Could not get nonce from init response")]
+    LoginNonceMissing,
 
-fn update_data(data: &mut HashMap<String, f64>, message: &Value) {
-    let plazo = message.get("plazo").and_then(|v| v.as_str()).unwrap_or("");
-    let ticker = message.get("ticker").and_then(|v| v.as_str()).unwrap_or("");
-    let pv = message.get("pv").and_then(|v| v.as_f64()).unwrap_or(0.0) * 100.0;
-    let pc = message.get("pc").and_then(|v| v.as_f64()).unwrap_or(0.0) * 100.0;
+    #[error("WebSocket connection closed with bad credentials")]
+    WebSocketBadCredentials,
+    #[error("Timeout while waiting for WebSocket data")]
+    WebSocketTimeout,
+    #[error("Maximum retries exceeded")]
+    MaxRetriesExceeded,
+}
 
-    match plazo {
-        "CI" => {
-            match ticker {
-                "AL30" => {
-                    data.insert("al30_ask".to_string(), pv);
-                    data.insert("al30_bid".to_string(), pc);
-                }
-                "AL30D" => {
-                    data.insert("al30d_ask".to_string(), pv);
-                    data.insert("al30d_bid".to_string(), pc);
-                }
-                "GD30" => {
-                    data.insert("gd30_ask".to_string(), pv);
-                    data.insert("gd30_bid".to_string(), pc);
-                }
-                "GD30D" => {
-                    data.insert("gd30d_ask".to_string(), pv);
-                    data.insert("gd30d_bid".to_string(), pc);
-                }
-                _ => {}
-            }
+
+
+impl ResponseError for AppError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            AppError::BadCredentials | AppError::WebSocketBadCredentials => StatusCode::UNAUTHORIZED,
+            AppError::LoginServerError => StatusCode::SERVICE_UNAVAILABLE,
+            AppError::WebSocketTimeout => StatusCode::GATEWAY_TIMEOUT,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
-        "24hs" => {
-            match ticker {
-                "AL30" => {
-                    data.insert("al30_ask_24hs".to_string(), pv);
-                    data.insert("al30_bid_24hs".to_string(), pc);
-                }
-                "AL30D" => {
-                    data.insert("al30d_ask_24hs".to_string(), pv);
-                    data.insert("al30d_bid_24hs".to_string(), pc);
-                }
-                "GD30" => {
-                    data.insert("gd30_ask_24hs".to_string(), pv);
-                    data.insert("gd30_bid_24hs".to_string(), pc);
-                }
-                "GD30D" => {
-                    data.insert("gd30d_ask_24hs".to_string(), pv);
-                    data.insert("gd30d_bid_24hs".to_string(), pc);
-                }
-                _ => {}
-            }
-        }
-        _ => {}
     }
 }
 
-fn all_keys_present(data: &HashMap<String, f64>) -> bool {
-    [
-        "al30_ask", "al30_bid", "al30d_ask", "al30d_bid",
-        "gd30_ask", "gd30_bid", "gd30d_ask", "gd30d_bid",
-        "al30_ask_24hs", "al30_bid_24hs", "al30d_ask_24hs", "al30d_bid_24hs",
-        "gd30_ask_24hs", "gd30_bid_24hs", "gd30d_ask_24hs", "gd30d_bid_24hs"
-    ].iter().all(|k| data.contains_key(*k))
+impl AppState {
+    async fn new(config: Config) -> Result<Self, AppError> {
+        let client = Client::new();
+        let firestore = FirestoreDb::new(&config.gcp_project_id).await?;
+        Ok(Self {
+            client,
+            firestore,
+            config,
+            access_token: RwLock::new(String::new()),
+            force_refresh: RwLock::new(false), // <-- initialize
+        })
+    }
 }
 
-async fn login(client: &Client, payload: &Value, headers: &reqwest::header::HeaderMap, firestore: &FirestoreDb) -> String {
-    let resp = client
-        .post("https://clientes.balanz.com/api/v1/auth/init")
-        .json(&json!({"user": payload["user"], "source": "WebV2"}))
-        .headers(headers.clone())
-        .send()
-        .await;
+#[actix_web::get("/quotes")]
+async fn get_quotes(state: web::Data<AppState>) -> Result<HttpResponse, AppError> {
+    log::info!("Received request for /quotes");
+    const MAX_RETRIES: u32 = 2;
+    let mut last_error: Option<AppError> = None;
 
-    let resp = match resp {
-        Ok(r) => {
-            if r.status().is_server_error() {
-                eprintln!("Received 5xx error: {}", r.status());
-                // Return a special value to indicate a temporary error
-                return "__TEMPORARY_ERROR__".to_string();
+    for attempt in 0..=MAX_RETRIES {
+        match fetch_quotes_from_websocket(&state).await {
+            Ok(data) => {
+
+                // Immediately return the data to the client.
+                return Ok(HttpResponse::Ok().json(data));
             }
-            r
+            Err(e) => {
+                log::warn!("Attempt {} failed: {}", attempt + 1, e);
+                // If the error is due to bad credentials, clear the token to force a re-login on the next attempt.
+                if matches!(e, AppError::WebSocketBadCredentials | AppError::BadCredentials) {
+                    let mut token_guard = state.access_token.write().await;
+                    *token_guard = String::new();
+                    log::info!("Cleared invalid access token. Will attempt to re-login.");
+                    let mut force_refresh_guard = state.force_refresh.write().await;
+                    *force_refresh_guard = true;
+                }
+                last_error = Some(e);
+                sleep(Duration::from_secs(2)).await; // Wait before retrying
+            }
         }
-        Err(e) => {
-            eprintln!("HTTP request failed: {:?}", e);
-            return String::new();
-        }
-    };
+    }
 
-    let text = resp.text().await;
-    let text = match text {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("Failed to read response body: {:?}", e);
-            return String::new();
-        }
-    };
+    Err(last_error.unwrap_or(AppError::MaxRetriesExceeded))
+}
 
-    let init_resp = serde_json::from_str::<Value>(&text);
-    let init_resp = match init_resp {
-        Ok(val) => val,
-        Err(e) => {
-            eprintln!("Failed to parse JSON: {:?}", e);
-            return String::new();
-        }
-    };
 
-    let mut login_payload = payload.clone();
-    login_payload["nonce"] = init_resp["nonce"].clone();
+
+/// Holds static configuration loaded once at startup.
+#[derive(Clone)]
+struct Config {
+    gcp_project_id: String,
+    login_payload: Value,
+    http_headers: header::HeaderMap,
+}
+
+impl Config {
+    fn from_env() -> Result<Self, AppError> {
+        let user = env::var("BALANZ_USER")?;
+        let password = env::var("BALANZ_PASSWORD")?;
+
+        let login_payload = json!({
+            "user": user,
+            "pass": password,
+            "source": "WebV2",
+            "VersionSO": "10",
+            "VersionApp": "2.11.0",
+            "TipoDispositivo": "Web",
+            "SistemaOperativo": "Windows",
+            "NombreDispositivo": "Edge 125.0.0.0",
+            "idDispositivo": "84a22d3c-5165-4ed0-b061-0f8b8ddf09d0"
+        });
+
+        let mut http_headers = header::HeaderMap::new();
+        http_headers.insert(header::CONTENT_TYPE, "application/json".parse().unwrap());
+        http_headers.insert(header::ACCEPT, "application/json".parse().unwrap());
+        http_headers.insert(header::USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0".parse().unwrap());
+        http_headers.insert(header::REFERER, "https://clientes.balanz.com/".parse().unwrap());
+
+        Ok(Self {
+            gcp_project_id: env::var("GCP_PROJECT_ID")?,
+            login_payload,
+            http_headers,
+        })
+    }
+}
+
+/// A single struct to hold all shared application state.
+struct AppState {
+    client: Client,
+    firestore: FirestoreDb,
+    config: Config,
+    access_token: RwLock<String>,
+    force_refresh: RwLock<bool>
+}
+
+const REQUIRED_KEYS: &[&str] = &[
+    "al30_ask", "al30_bid", "al30d_ask", "al30d_bid",
+    "gd30_ask", "gd30_bid", "gd30d_ask", "gd30d_bid",
+    "al30_ask_24hs", "al30_bid_24hs", "al30d_ask_24hs", "al30d_bid_24hs",
+    "gd30_ask_24hs", "gd30_bid_24hs", "gd30d_ask_24hs", "gd30d_bid_24hs",
+];
+
+/// Checks if the map contains all the keys we need.
+fn all_keys_present(data: &HashMap<String, f64>) -> bool {
+    REQUIRED_KEYS.iter().all(|&key| data.contains_key(key))
+}
+
+/// Dynamically updates the data map from a WebSocket message.
+fn update_data(data: &mut HashMap<String, f64>, message: &Value) {
+    if let (Some(plazo), Some(ticker), Some(pv), Some(pc)) = (
+        message.get("plazo").and_then(Value::as_str),
+        message.get("ticker").and_then(Value::as_str),
+        message.get("pv").and_then(Value::as_f64),
+        message.get("pc").and_then(Value::as_f64),
+    ) {
+        let plazo_suffix = match plazo {
+            "CI" => "",
+            "24hs" => "_24hs",
+            _ => return, // Ignore other terms
+        };
+
+        let ticker_lower = ticker.to_lowercase();
+        data.insert(format!("{}_ask{}", ticker_lower, plazo_suffix), pv * 100.0);
+        data.insert(format!("{}_bid{}", ticker_lower, plazo_suffix), pc * 100.0);
+    }
+}
+
+#[derive(Deserialize)]
+struct AccessTokenDoc {
+    value: String,
+}
+
+/// Performs the two-step login process to the Balanz API.
+async fn login(client: &Client, config: &Config) -> Result<String, AppError> {
+    // Step 1: Get nonce
+    let init_resp = client
+        .post("https://clientes.balanz.com/api/v1/auth/init")
+        .json(&json!({"user": config.login_payload["user"], "source": "WebV2"}))
+        .headers(config.http_headers.clone())
+        .send()
+        .await?;
+
+    if init_resp.status().is_server_error() {
+        return Err(AppError::LoginServerError);
+    }
+    let init_json: Value = init_resp.json().await?;
+    let nonce = init_json["nonce"].as_str().ok_or(AppError::LoginNonceMissing)?;
+
+    // Step 2: Login with nonce
+    let mut final_payload = config.login_payload.clone();
+    final_payload["nonce"] = json!(nonce);
 
     let login_resp = client
         .post("https://clientes.balanz.com/api/v1/auth/login")
-        .json(&login_payload)
-        .headers(headers.clone())
+        .json(&final_payload)
+        .headers(config.http_headers.clone())
         .send()
-        .await;
+        .await?;
 
-    let login_resp = match login_resp {
-        Ok(r) => {
-            if r.status().is_client_error() {
-                eprintln!("Received 4xx error: {}", r.status());
-                // Return a special value to indicate a temporary error
-                return "__BLOCKED_USER__".to_string();
-            }
-            r
-        }
-        Err(e) => {
-            eprintln!("HTTP request failed: {:?}", e);
-            return String::new();
-        }
-    };
+    if login_resp.status().is_client_error() {
+        return Err(AppError::BadCredentials);
+    }
+    if !login_resp.status().is_success() {
+        return Err(AppError::LoginServerError);
+    }
 
-    let login_text = login_resp.text().await;
-    let login_text = match login_text {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("Failed to read response body: {:?}", e);
-            return String::new();
-        }
-    };
+    let login_json: Value = login_resp.json().await?;
+    let access_token = login_json["AccessToken"].as_str().ok_or(AppError::LoginResponseMissingToken)?;
 
-    let login_resp = serde_json::from_str::<Value>(&login_text);
-    let login_resp = match login_resp {
-        Ok(val) => val,
-        Err(e) => {
-            eprintln!("Failed to parse JSON: {:?}", e);
-            return String::new();
-        }
-    };
-
-    let access_token = login_resp["AccessToken"].as_str().unwrap_or("").to_string();
-
-    // Save the new access token to Firestore
-    let _ = firestore.fluent()
-        .update()
-        .in_col("MEPBot")
-        .document_id("AccessToken")
-        .object(&json!({ "value": &access_token }))
-        .execute::<()>()
-        .await;
-
-    access_token
+    Ok(access_token.to_string())
 }
 
-async fn get_quotes(_data: web::Data<SharedData>) -> impl Responder {
-    let user = env::var("BALANZ_USER").unwrap_or_default();
-    let password = env::var("BALANZ_PASSWORD").unwrap_or_default();
-    let gcp_project = env::var("GCP_PROJECT_ID").unwrap_or_default();
+// --- 4. Core WebSocket and Data Fetching Logic ---
 
-    let payload = json!({
-        "user": user,
-        "pass": password,
-        "source": "WebV2",
-        "VersionSO": "10",
-        "VersionApp": "2.11.0",
-        "TipoDispositivo": "Web",
-        "SistemaOperativo": "Windows",
-        "NombreDispositivo": "Edge 125.0.0.0",
-        "idDispositivo": "84a22d3c-5165-4ed0-b061-0f8b8ddf09d0"
+/// Gets a valid access token, trying Firestore first, then logging in if necessary.
+/// Uses RwLock to prevent multiple concurrent login attempts.
+async fn get_or_refresh_token(state: &web::Data<AppState>) -> Result<String, AppError> {
+    // Fast path: Try to get a read lock and return the existing token.
+    let token_read_guard = state.access_token.read().await;
+    if !token_read_guard.is_empty() {
+        return Ok(token_read_guard.clone());
+    }
+    drop(token_read_guard); // Drop read lock before acquiring write lock
+
+    // Slow path: Acquire a write lock to perform login or DB fetch.
+    let mut token_write_guard = state.access_token.write().await;
+
+    // Double-check: another request might have populated the token while we waited for the lock.
+    if !token_write_guard.is_empty() {
+        return Ok(token_write_guard.clone());
+    }
+
+    let force_refresh_read_guard = state.force_refresh.read().await;
+
+    if !*force_refresh_read_guard {
+        // Try to get token from Firestore first
+        log::info!("Token not in memory, checking Firestore...");
+        let doc: FirestoreResult<Option<AccessTokenDoc>> = state.firestore.fluent()
+            .select()
+            .by_id_in("MEPBot")
+            .obj()
+            .one("AccessToken")
+            .await;
+
+        if let Ok(Some(token_doc)) = doc {
+            if !token_doc.value.is_empty() {
+                log::info!("Found valid token in Firestore.");
+                *token_write_guard = token_doc.value.clone();
+                return Ok(token_doc.value);
+            }
+        }
+    }
+
+    // If not in memory or Firestore, perform a fresh login.
+    log::info!("No valid token found. Logging in to Balanz...");
+    let new_token = login(&state.client, &state.config).await?;
+    *token_write_guard = new_token.clone();
+    log::info!("Login successful. New token acquired.");
+
+    // Asynchronously save the new token to Firestore for persistence.
+    let firestore_clone = state.firestore.clone();
+    let token_to_save = new_token.clone();
+    tokio::spawn(async move {
+        let update_result = firestore_clone.fluent()
+            .update()
+            .in_col("MEPBot")
+            .document_id("AccessToken")
+            .object(&json!({ "value": token_to_save }))
+            .execute::<()>()
+            .await;
+        if let Err(e) = update_result {
+            log::error!("Failed to save new access token to Firestore: {}", e);
+        }
     });
 
-    let user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0";
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert("Content-type", "application/json".parse().unwrap());
-    headers.insert("Accept", "application/json".parse().unwrap());
-    headers.insert("User-Agent", user_agent.parse().unwrap());
-    headers.insert("Referer", "https://clientes.balanz.com/".parse().unwrap());
+    Ok(new_token)
+}
 
-    let client = Client::new();
+/// Connects to the WebSocket, subscribes, and gathers all required data.
+async fn fetch_quotes_from_websocket(state: &web::Data<AppState>) -> Result<HashMap<String, f64>, AppError> {
+    let access_token = get_or_refresh_token(state).await?;
+    let ws_url = "wss://clientes.balanz.com/websocket";
 
-    let firestore = FIRESTORE
-        .get_or_init(|| async {
-            FirestoreDb::new(&gcp_project).await.unwrap()
-        })
-        .await;
+    log::info!("Connecting to WebSocket...");
+    let (ws_stream, _) = connect_async(ws_url).await?;
+    let (mut write, mut read) = ws_stream.split();
 
-    let doc: FirestoreResult<Option<Value>> = firestore
-        .fluent()
-        .select()
-        .by_id_in("MEPBot")
-        .obj()
-        .one("AccessToken")
-        .await;
+    // Subscribe to the quotes panel
+    let sub_msg = json!({"panel": 6, "token": &access_token}).to_string();
+    write.send(WsMessage::Text(Utf8Bytes::from(sub_msg))).await?;
+    log::info!("WebSocket connection established and subscribed to panel.");
 
-    if let Ok(Some(val)) = doc {
-        if let Some(token) = val.get("value").and_then(|v| v.as_str()) {
-            let _ = ACCESS_TOKEN.set(token.to_string());
-        }
-    }
+    let mut data_map = HashMap::new();
+    let timeout_duration = Duration::from_secs(15);
 
-    let mut access_token = {
-        let token = ACCESS_TOKEN.get_or_init(|| async { login(&client, &payload, &headers, &firestore).await }).await.clone();
-        if token.is_empty() {
-            println!("Access token not found, logging in...");
-            let new_token = login(&client, &payload, &headers, &firestore).await;
-            let _ = ACCESS_TOKEN.set(new_token.clone());
-            new_token
-        } else {
-            token
-        }
-    };
-
-    if access_token == "__TEMPORARY_ERROR__" {
-        return HttpResponse::ServiceUnavailable().body("Temporary server error, please try again later.");
-    }
-    if access_token == "__BLOCKED_USER__" {
-        return HttpResponse::ServiceUnavailable().body("Blocked user, please update your credentials and try again..");
-    }
-
-
-    // Outer loop for reconnecting on "Bad credentials"
-    let mut retries = 0;
-    const MAX_RETRIES: usize = 3;
-
-    'outer: loop {
-        if retries >= MAX_RETRIES {
-            return HttpResponse::InternalServerError().body("Failed after 3 retries");
-        }
-
-        let ws_url = Url::parse("wss://clientes.balanz.com/websocket").unwrap();
-        let msg = json!({"panel": 6, "token": &access_token}).to_string();
-
-        let ws_result = connect_async(ws_url.as_str()).await;
-
-        if ws_result.is_err() {
-            println!("WebSocket connection error: {:?}", ws_result.err());
-            // break;
-            retries += 1;
-            sleep(Duration::from_secs(10)).await;
-            // access_token = login(&client, &payload, &headers, &firestore).await;
-            // let _ = ACCESS_TOKEN.set(access_token.clone());
-            continue;
-        }
-
-        let (ws_stream, _) = ws_result.unwrap();
-        let (mut write, mut read) = ws_stream.split();
-        write.send(tokio_tungstenite::tungstenite::Message::Text(Utf8Bytes::from(msg))).await.unwrap();
-
-        let mut local_data = HashMap::new();
-
-        while !all_keys_present(&local_data) {
-            match read.next().await {
-                Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text))) => {
-                    if let Ok(message) = serde_json::from_str::<Value>(&text) {
-                        update_data(&mut local_data, &message);
+    loop {
+        tokio::select! {
+            biased; // Prioritize the message stream over the timeout
+            maybe_msg = read.next() => {
+                match maybe_msg {
+                    Some(Ok(WsMessage::Text(text))) => {
+                        log::debug!("Received WebSocket message: {:?}", text);
+                        if let Ok(message) = serde_json::from_str::<Value>(&text) {
+                            update_data(&mut data_map, &message);
+                        }
                     }
-                }
-                Some(Ok(tokio_tungstenite::tungstenite::Message::Close(Some(frame)))) => {
-                    if frame.reason == Utf8Bytes::from("Bad credentials") {
-                        println!("Bad credentials, refreshing token...");
-                        retries += 1;
-                        sleep(Duration::from_secs(10)).await;
-                        access_token = login(&client, &payload, &headers, &firestore).await;
-                        let _ = ACCESS_TOKEN.set(access_token.clone());
-                        continue 'outer;
-                    } else {
-                        println!("WebSocket closed: {:?}", frame);
+                    Some(Ok(WsMessage::Close(Some(frame)))) => {
+                        log::warn!("WebSocket closed by server: {:?}", frame);
+                        if frame.reason.contains("Bad credentials") {
+                            return Err(AppError::WebSocketBadCredentials);
+                        }
+                        break; // Normal close
+                    }
+                    Some(Err(e)) => {
+                        log::error!("WebSocket stream error: {}", e);
+                        return Err(e.into());
+                    }
+                    None => {
+                        log::warn!("WebSocket stream ended unexpectedly.");
                         break;
                     }
+                    _ => {} // Ignore other message types
                 }
-                Some(Ok(tokio_tungstenite::tungstenite::Message::Binary(_))) => {}
-                Some(Ok(tokio_tungstenite::tungstenite::Message::Ping(_))) => {}
-                Some(Ok(tokio_tungstenite::tungstenite::Message::Pong(_))) => {}
-                Some(Ok(_)) => {}
 
-                Some(Err(e)) => {
-                    println!("WebSocket error: {:?}", e);
+                if all_keys_present(&data_map) {
+                    log::info!("All required data received from WebSocket.");
                     break;
                 }
-                None => {
-                    println!("Got none, breaking");
-                    break;
-                }
+            },
+            _ = tokio::time::sleep(timeout_duration) => {
+                log::error!("Timed out waiting for WebSocket data. Received {} of {} keys.", data_map.len(), REQUIRED_KEYS.len());
+                return Err(AppError::WebSocketTimeout);
             }
         }
-
-        println!("Final result: {:?}", local_data);
-        let data_json = serde_json::to_string(&local_data).unwrap();
-        return HttpResponse::Ok().content_type("application/json").body(data_json);
     }
+
+    write.close().await?;
+    Ok(data_map)
 }
+
+// --- 5. Actix Web Handler and Main Function ---
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let data: SharedData = Arc::new(Mutex::new(HashMap::new()));
+    // For local development, load .env file if it exists.
+    dotenv::dotenv().ok();
+    // Initialize logger
+    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
+
+    // 1. Load configuration at startup
+    let config = match Config::from_env() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            log::error!("FATAL: Failed to load configuration from environment: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // 2. Initialize shared state
+    let app_state = match AppState::new(config).await {
+        Ok(state) => web::Data::new(state),
+        Err(e) => {
+            log::error!("FATAL: Failed to initialize application state: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let host = "0.0.0.0";
+    let port = 8080;
+
+    // 3. Start the Actix web server
     HttpServer::new(move || {
-        App::new()
-            .app_data(web::Data::new(data.clone()))
-            .route("/", web::get().to(get_quotes))
+        App::new().app_data(app_state.clone())
+        .service(get_quotes) // <-- Register the /quotes route
     })
-        .bind_auto_h2c(("0.0.0.0", 8080))?
+        .bind_auto_h2c((host, port))?
         .run()
         .await
 }
