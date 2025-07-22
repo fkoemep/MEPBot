@@ -110,7 +110,6 @@ async fn login(client: &Client, payload: &Value, headers: &reqwest::header::Head
             return String::new();
         }
     };
-    println!("Raw response: {}", text);
 
     let init_resp = serde_json::from_str::<Value>(&text);
     let init_resp = match init_resp {
@@ -129,11 +128,40 @@ async fn login(client: &Client, payload: &Value, headers: &reqwest::header::Head
         .json(&login_payload)
         .headers(headers.clone())
         .send()
-        .await
-        .unwrap()
-        .json::<Value>()
-        .await
-        .unwrap();
+        .await;
+
+    let login_resp = match login_resp {
+        Ok(r) => {
+            if r.status().is_client_error() {
+                eprintln!("Received 4xx error: {}", r.status());
+                // Return a special value to indicate a temporary error
+                return "__BLOCKED_USER__".to_string();
+            }
+            r
+        }
+        Err(e) => {
+            eprintln!("HTTP request failed: {:?}", e);
+            return String::new();
+        }
+    };
+
+    let login_text = login_resp.text().await;
+    let login_text = match login_text {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("Failed to read response body: {:?}", e);
+            return String::new();
+        }
+    };
+
+    let login_resp = serde_json::from_str::<Value>(&login_text);
+    let login_resp = match login_resp {
+        Ok(val) => val,
+        Err(e) => {
+            eprintln!("Failed to parse JSON: {:?}", e);
+            return String::new();
+        }
+    };
 
     let access_token = login_resp["AccessToken"].as_str().unwrap_or("").to_string();
 
@@ -210,6 +238,10 @@ async fn get_quotes(_data: web::Data<SharedData>) -> impl Responder {
     if access_token == "__TEMPORARY_ERROR__" {
         return HttpResponse::ServiceUnavailable().body("Temporary server error, please try again later.");
     }
+    if access_token == "__BLOCKED_USER__" {
+        return HttpResponse::ServiceUnavailable().body("Blocked user, please update your credentials and try again..");
+    }
+
 
     // Outer loop for reconnecting on "Bad credentials"
     let mut retries = 0;
