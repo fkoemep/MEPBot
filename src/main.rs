@@ -1,3 +1,4 @@
+use actix_web::{get, HttpResponse};
 use std::error;
 use actix_web::{App, HttpServer, ResponseError, http::StatusCode};
 use std::env;
@@ -50,7 +51,10 @@ impl ResponseError for AppError {
     }
 }
 
-
+#[get("/health")]
+async fn health() -> HttpResponse {
+    HttpResponse::Ok().body("ok")
+}
 
 #[actix_web::main]
 async fn main() -> Result<(), Box<dyn error::Error>> {
@@ -71,6 +75,7 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
         App::new()
             .app_data(balanz_state.clone())
             .service(balanz_scope())
+            .service(health)
     })
         .bind_auto_h2c((host, port))?
         .run();
