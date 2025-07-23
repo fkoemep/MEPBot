@@ -40,7 +40,7 @@ impl BalanzConfig {
         http_headers.insert(header::REFERER, "https://clientes.balanz.com/".parse().unwrap());
 
         Ok(Self {
-            gcp_project_id: env::var("GCP_PROJECT_ID")?,
+            gcp_project_id: env::var("PROJECT_ID")?,
             login_payload,
             http_headers,
             timeout_secs: env::var("BALANZ_TIMEOUT_SECS")
