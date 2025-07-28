@@ -49,6 +49,10 @@ impl ResponseError for AppError {
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
+    fn error_response(&self) -> HttpResponse {
+        HttpResponse::build(self.status_code())
+            .body(format!("Error: {} ({})", self, self.status_code().as_u16()))
+    }
 }
 
 #[get("/health")]

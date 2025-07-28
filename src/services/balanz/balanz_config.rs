@@ -46,7 +46,7 @@ impl BalanzConfig {
             timeout_secs: env::var("BALANZ_TIMEOUT_SECS")
                 .ok()
                 .and_then(|s| s.parse().ok())
-                .unwrap_or(40),
+                .unwrap_or(60),
         })
     }
 }
