@@ -2,14 +2,15 @@ use actix_web::{get, HttpResponse};
 use std::error;
 use actix_web::{App, HttpServer, ResponseError, http::StatusCode};
 use std::env;
-use actix_web::middleware::Logger;
+// use actix_web::middleware::Logger;
 use actix_web::rt::signal;
 use thiserror::Error;
-use log::error;
+use log::{error, warn};
 use firestore::{errors::FirestoreError};
 mod services;
 use services::balanz::balanz_config::init_state as balanz_init_state;
 use services::balanz::balanz::scope as balanz_scope;
+use std::io::Write;
 
 #[derive(Error, Debug)]
 enum AppError {
@@ -66,7 +67,17 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
     // For local development, load .env file if it exists.
     dotenv::dotenv().ok();
     // Initialize logger
-    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
+    let is_gcp = env::var("K_SERVICE").is_ok();
+
+    let mut builder = env_logger::Builder::from_env(env_logger::Env::default());
+    builder.filter_level(log::LevelFilter::Info);
+
+    if is_gcp {
+        builder.format(|buf, record| {
+            writeln!(buf, "[{}] {}", record.level(), record.args())
+        });
+    }
+    builder.init();
 
     let balanz_state = balanz_init_state().await;
 
@@ -78,7 +89,7 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
 
     let server = HttpServer::new(move || {
         App::new()
-            .wrap(Logger::default())
+            // .wrap(Logger::default())
             .app_data(balanz_state.clone())
             .service(balanz_scope())
             .service(health)
@@ -90,7 +101,7 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
     tokio::select! {
     res = server => res.map_err(|e| e.into()),
     _ = signal::ctrl_c() => {
-        error!("Shutdown signal received, stopping server.");
+        warn!("Shutdown signal received, stopping server.");
         Ok(())
         }
     }
