@@ -2,6 +2,7 @@ use actix_web::{get, HttpResponse};
 use std::error;
 use actix_web::{App, HttpServer, ResponseError, http::StatusCode};
 use std::env;
+use actix_web::middleware::Logger;
 use actix_web::rt::signal;
 use thiserror::Error;
 use log::error;
@@ -57,7 +58,7 @@ impl ResponseError for AppError {
 
 #[get("/health")]
 async fn health() -> HttpResponse {
-    HttpResponse::Ok().body("ok")
+    HttpResponse::Ok().finish()
 }
 
 #[actix_web::main]
@@ -77,6 +78,7 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
 
     let server = HttpServer::new(move || {
         App::new()
+            .wrap(Logger::default())
             .app_data(balanz_state.clone())
             .service(balanz_scope())
             .service(health)

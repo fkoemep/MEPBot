@@ -38,9 +38,6 @@ async fn get_quotes(state: web::Data<BalanzState>) -> Result<HttpResponse, AppEr
     Err(last_error.unwrap_or(AppError::MaxRetriesExceeded))
 }
 
-
-
-pub(crate) fn scope() -> actix_web::Scope {
-    web::scope("")
-        .service(get_quotes)
+pub(crate) fn scope() -> get_quotes {
+    get_quotes
 }
