@@ -77,7 +77,7 @@ pub(super) async fn get_or_refresh_token(state: &web::Data<BalanzState>) -> Resu
         log::info!("Token not in memory, checking Firestore...");
         let doc: FirestoreResult<Option<AccessTokenDoc>> = state.firestore.fluent()
             .select()
-            .by_id_in("MEPBot")
+            .by_id_in("mep-bot")
             .obj()
             .one("AccessToken")
             .await;
@@ -103,7 +103,7 @@ pub(super) async fn get_or_refresh_token(state: &web::Data<BalanzState>) -> Resu
     tokio::spawn(async move {
         let update_result = firestore_clone.fluent()
             .update()
-            .in_col("MEPBot")
+            .in_col("mep-bot")
             .document_id("AccessToken")
             .object(&json!({ "value": token_to_save }))
             .execute::<()>()
