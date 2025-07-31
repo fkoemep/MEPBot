@@ -36,7 +36,7 @@ do
 done
 
 cat << EOF > alertspolicy.json
-{"combiner":"OR","alertStrategy":{"notificationRateLimit":{"period": "300s"}},"conditions":[{"displayName":"Cloud Services with errors","conditionMatchedLog":{"filter":"(resource.type=\"build\" OR resource.type=\"cloud_run_revision\") AND (severity = \"ERROR\" OR severity=\"EMERGENCY\" OR severity=\"CRITICAL\")"}}]}
+{"combiner":"OR","alertStrategy":{"notificationRateLimit":{"period": "300s"}},"conditions":[{"displayName":"Cloud Services with errors","conditionMatchedLog":{"filter":"((resource.type=\"cloud_scheduler_job\" AND resource.labels.job_id=\"$_JOB_NAME\") OR (resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"$_JOB_NAME\")) AND (severity = \"ERROR\" OR severity=\"EMERGENCY\" OR severity=\"CRITICAL\")"}}]}
 EOF
 
 if [ "$create_alert" = true ] ; then
