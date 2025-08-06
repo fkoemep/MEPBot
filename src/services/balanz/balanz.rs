@@ -17,6 +17,7 @@ async fn get_quotes(state: web::Data<BalanzState>) -> Result<HttpResponse, AppEr
             Ok(data) => {
 
                 // Immediately return the data to the client.
+                log::info!("Fetched quotes: {:?}", data);
                 return Ok(HttpResponse::Ok().json(data));
             }
             Err(e) => {
