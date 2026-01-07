@@ -72,7 +72,7 @@ steps:
       - '--gpu'
       - '0'
       - '--startup-probe'
-      - 'tcpSocket.port=8080'
+      - 'timeoutSeconds=240,periodSeconds=240,failureThreshold=1,tcpSocket.port=8080'
       - '--liveness-probe'
       - 'httpGet.path=/health'
       - '--no-cpu-boost'
