@@ -80,7 +80,6 @@ steps:
       - '--no-allow-unauthenticated'
       - '--no-allow-unencrypted-build'
       - '--session-affinity'
-      - '--automatic-updates'
       - '--use-http2'
       - '--set-env-vars'
       - 'BALANZ_PASSWORD=$_BALANZ_PASSWORD,BALANZ_USER=$_BALANZ_USER,PROJECT_ID=$PROJECT_ID'
