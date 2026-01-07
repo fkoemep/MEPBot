@@ -44,6 +44,8 @@ steps:
       - '1'
       - '--min-instances'
       - '0'
+      - '--startup-probe'
+      - 'timeoutSeconds=240,periodSeconds=240,failureThreshold=1,tcpSocket.port=8080'      
       - '--timeout'
       - '50s'
       - '--execution-environment'
