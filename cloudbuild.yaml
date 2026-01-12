@@ -62,7 +62,7 @@ steps:
       - '--min-instances'
       - '0'
       - '--timeout'
-      - '50s'
+      - '60s'
       - '--execution-environment'
       - 'gen2'
       - '--memory'
