@@ -3,9 +3,9 @@ FROM rust:1.88-alpine AS builder
 WORKDIR /app
 COPY . .
 
-RUN apk add --no-cache musl-dev pkgconfig && cargo build --release
+RUN apk add --no-cache musl-dev pkgconfig upx ca-certificates
 
-RUN apk add --no-cache upx ca-certificates && upx /app/target/release/mep-bot
+RUN cargo build --release && upx /app/target/release/mep-bot
 
 FROM scratch
 
