@@ -12,7 +12,7 @@ WORKDIR /app
 
 # Install build deps and prepare cache dirs
 RUN --mount=type=cache,id=apk,target=/var/cache/apk,sharing=locked,rw \
-    apk add --no-cache musl-dev pkgconfig upx ca-certificates \
+    apk add musl-dev pkgconfig upx ca-certificates \
     && mkdir -p $CARGO_HOME/registry $CARGO_HOME/git $CARGO_TARGET_DIR
 
 COPY Cargo.toml Cargo.lock ./
