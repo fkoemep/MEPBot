@@ -5,7 +5,7 @@ use std::env;
 // use actix_web::middleware::Logger;
 use actix_web::rt::signal;
 use thiserror::Error;
-use log::{error, warn};
+use log::{warn};
 use firestore::{errors::FirestoreError};
 mod services;
 use services::balanz::balanz_config::init_state as balanz_init_state;
