@@ -21,17 +21,17 @@ RUN mkdir -p src && printf '%s\n' 'fn main() { }' > src/main.rs
 # Now copy the rest of the source and build using the same cache mounts
 
 # Populate the Cargo registry/git caches (requires BuildKit)
-RUN --mount=type=cache,target=/app/target/ \
-    --mount=type=cache,target=/usr/local/cargo/git/db \
-    --mount=type=cache,target=/usr/local/cargo/registry/ \
+RUN --mount=type=cache,id=apptarget,target=/app/target/ \
+    --mount=type=cache,id=db,target=/usr/local/cargo/git/db \
+    --mount=type=cache,id=registry,target=/usr/local/cargo/registry/ \
     cargo fetch --locked
 
 COPY src/ ./src/
 
 
-RUN --mount=type=cache,target=/app/target/ \
-    --mount=type=cache,target=/usr/local/cargo/git/db \
-    --mount=type=cache,target=/usr/local/cargo/registry/ \
+RUN --mount=type=cache,id=apptarget,target=/app/target/ \
+    --mount=type=cache,id=db,target=/usr/local/cargo/git/db \
+    --mount=type=cache,id=registry,target=/usr/local/cargo/registry/ \
     cargo build --release --locked && upx $CARGO_TARGET_DIR/release/mep-bot && \
     cp $CARGO_TARGET_DIR/release/mep-bot /usr/local/bin/mep-bot
 
