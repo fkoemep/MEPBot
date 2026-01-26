@@ -1,38 +1,49 @@
 FROM rust:1.93-alpine AS builder
 
-# Set Cargo/Rust dirs so we can cache them with BuildKit
-ENV APP_HOME=/app CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup CARGO_TARGET_DIR=/app/target PATH=/usr/local/cargo/bin:$PATH
+ENV APP_HOME=/app
 
 WORKDIR $APP_HOME
 
 RUN addgroup -S usergroup && adduser -S appuser -G usergroup
 
-RUN --mount=type=cache,id=apk,target=/var/cache/apk,sharing=locked,rw apk add musl-dev pkgconfig upx ca-certificates
-
-# Create a minimal src/main.rs so `cargo fetch` can detect a binary target when running in the builder.
-RUN mkdir -p src && printf '%s\n' 'fn main() { }' > src/main.rs
+RUN --mount=type=cache,id=apk,target=/var/cache/apk,sharing=locked,rw \
+    apk add musl-dev pkgconfig upx ca-certificates
 
 COPY Cargo.toml Cargo.lock ./
 
-RUN --mount=type=cache,id=apptarget,target=/app/target/ --mount=type=cache,id=db,target=/usr/local/cargo/git/db --mount=type=cache,id=registry,target=/usr/local/cargo/registry/ cargo build --release --locked
+# Create a minimal src/main.rs so `cargo fetch` can detect a binary target when running in the builder.
+RUN mkdir -p src && printf '%s\n' 'fn main() { }' > dummy.rs
+
+RUN sed -i 's#src/main.rs#dummy.rs#' Cargo.toml
+
+RUN --mount=type=cache,id=db,target=/usr/local/cargo/git/db,rw \
+    --mount=type=cache,id=registry,target=/usr/local/cargo/registry/,rw \
+    cargo build --release --locked
+
+RUN sed -i 's#dummy.rs#src/main.rs#' Cargo.toml
 
 COPY src/ ./src/
 
-RUN --mount=type=cache,id=apptarget,target=/app/target/ --mount=type=cache,id=db,target=/usr/local/cargo/git/db --mount=type=cache,id=registry,target=/usr/local/cargo/registry/ cargo build --release --locked && upx /app/target/release/mep-bot && cp /app/target/release/mep-bot /usr/local/bin/mep-bot
+RUN --mount=type=cache,id=db,target=/usr/local/cargo/git/db,rw \
+    --mount=type=cache,id=registry,target=/usr/local/cargo/registry/,rw \
+    cargo build --release --locked
 
-FROM scratch
+RUN upx $APP_HOME/target/release/app
 
-WORKDIR /app
-ENV PORT=8080 CARGO_TARGET_DIR=/app/target
+FROM scratch AS runner
+
+ENV APP_HOME=/app PORT=8080
+
+WORKDIR $APP_HOME
 
 COPY --from=builder /etc/passwd /etc/passwd
 
 USER appuser
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /usr/local/bin/mep-bot ./app
-COPY --from=builder /app/*.json ./
+COPY --from=builder $APP_HOME/target/release/app ./app
+COPY --from=builder $APP_HOME/*.json ./
 
 EXPOSE 8080
 
-CMD ["./app"]
+ENTRYPOINT ["./app"]
