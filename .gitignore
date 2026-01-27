@@ -5,3 +5,4 @@
 /cloudbuild-service-account.json
 /target
 /.idea/
+.env
