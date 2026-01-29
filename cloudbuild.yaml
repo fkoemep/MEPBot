@@ -19,7 +19,7 @@ steps:
   # Build the container image
   - name: 'gcr.io/cloud-builders/docker'
     #Selecting the alpine image, which is slimmer and runs with chromium. You can change it to slim if you want.
-    args: ['build', '-t', '$_RUN_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO_NAME/$_RUN_NAME', '.']
+    args: ['build', '-t', '$_RUN_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO_NAME/$_RUN_NAME', '.', '--cache-from', '$_RUN_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO_NAME/$_RUN_NAME:latest']
     env:
       - "DOCKER_BUILDKIT=1"
   
