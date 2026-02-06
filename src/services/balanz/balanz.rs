@@ -35,9 +35,8 @@ async fn get_quotes(state: web::Data<BalanzState>) -> Result<HttpResponse, AppEr
             }
         }
     }
-    let err = last_error.unwrap_or(AppError::MaxRetriesExceeded);
-    log::error!("All attempts to fetch quotes failed: {}", err);
-    Err(err)
+    log::error!("All attempts to fetch quotes failed");
+    Err(last_error.unwrap_or(AppError::MaxRetriesExceeded))
 }
 
 pub(crate) fn scope() -> get_quotes {
