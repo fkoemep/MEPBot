@@ -9,7 +9,7 @@ use super::balanz_ws::fetch_quotes_from_websocket;
 #[actix_web::get("/quotes")]
 async fn get_quotes(state: web::Data<BalanzState>) -> Result<HttpResponse, AppError> {
     log::info!("Received request for /quotes");
-    const MAX_RETRIES: u32 = 2;
+    const MAX_RETRIES: u32 = 1;
     let mut last_error: Option<AppError> = None;
 
     for attempt in 0..=MAX_RETRIES {
