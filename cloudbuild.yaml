@@ -28,22 +28,22 @@ steps:
     env:
       - "DOCKER_BUILDKIT=1"
 
-  - name: "gcr.io/cloud-builders/docker"
-    entrypoint: "bash"
-    args:
-      - "-c"
-      - |
-        curl -L -o ds.tar.gz https://github.com/mintoolkit/mint/releases/download/1.41.7/dist_linux.tar.gz;
-        tar -xvf ds.tar.gz;
-        mv dist_linux/mint /usr/local/bin/;
-        mv dist_linux/mint-sensor /usr/local/bin/;
-        mint build \
-          --include-workdir=true \
-          --http-probe=false \
-          --sensor-ipc-mode proxy \
-          --sensor-ipc-endpoint $(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}' | cut -f1) \
-          --tag ${_RUN_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO_NAME}/${_RUN_NAME}:latest \
-          ${_RUN_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO_NAME}/${_RUN_NAME}:latest;
+#  - name: "gcr.io/cloud-builders/docker"
+#    entrypoint: "bash"
+#    args:
+#      - "-c"
+#      - |
+#        curl -L -o ds.tar.gz https://github.com/mintoolkit/mint/releases/download/1.41.7/dist_linux.tar.gz;
+#        tar -xvf ds.tar.gz;
+#        mv dist_linux/mint /usr/local/bin/;
+#        mv dist_linux/mint-sensor /usr/local/bin/;
+#        mint build \
+#          --include-workdir=true \
+#          --http-probe=false \
+#          --sensor-ipc-mode proxy \
+#          --sensor-ipc-endpoint $(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}' | cut -f1) \
+#          --tag ${_RUN_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO_NAME}/${_RUN_NAME}:latest \
+#          ${_RUN_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO_NAME}/${_RUN_NAME}:latest;
 
   # Push the container image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
