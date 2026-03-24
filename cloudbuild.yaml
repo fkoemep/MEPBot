@@ -16,13 +16,18 @@ steps:
     entrypoint: 'bash'
     args: ['./deploy/scripts/createAlerts.sh','${_RUN_NAME}','${_EMAIL_ADDRESS}']
 
+  # Pull the latest image to leverage caching and speed up the build. If the image doesn't exist, it will just continue without caching.
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args: ['-c', 'docker pull $_RUN_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO_NAME/$_RUN_NAME:latest || exit 0']
+
   # Build the container image
   - name: 'gcr.io/cloud-builders/docker'
     #Selecting the alpine image, which is slimmer and runs with chromium. You can change it to slim if you want.
-    args: ['build', '-t', '$_RUN_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO_NAME/$_RUN_NAME', '.', '--cache-from', '$_RUN_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO_NAME/$_RUN_NAME:latest']
+    args: ['build', '-t', '$_RUN_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO_NAME/$_RUN_NAME:latest', '.', '--cache-from', '$_RUN_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO_NAME/$_RUN_NAME:latest', '--build-arg', 'BUILDKIT_INLINE_CACHE=1']
     env:
       - "DOCKER_BUILDKIT=1"
-  
+
   - name: "gcr.io/cloud-builders/docker"
     entrypoint: "bash"
     args:
@@ -37,12 +42,12 @@ steps:
           --http-probe=false \
           --sensor-ipc-mode proxy \
           --sensor-ipc-endpoint $(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}' | cut -f1) \
-          --tag ${_RUN_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO_NAME}/${_RUN_NAME} \
-          ${_RUN_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO_NAME}/${_RUN_NAME};
+          --tag ${_RUN_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO_NAME}/${_RUN_NAME}:latest \
+          ${_RUN_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO_NAME}/${_RUN_NAME}:latest;
 
   # Push the container image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', '$_RUN_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO_NAME/$_RUN_NAME']
+    args: ['push', '$_RUN_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO_NAME/$_RUN_NAME:latest']
 
   # Deploy container image to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -52,7 +57,7 @@ steps:
       - 'deploy'
       - '$_RUN_NAME'
       - '--image'
-      - '$_RUN_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO_NAME/$_RUN_NAME'
+      - '$_RUN_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO_NAME/$_RUN_NAME:latest'
       - '--region'
       - '$_RUN_REGION'
       - '--service-account'
@@ -89,10 +94,8 @@ steps:
 options:
   logging: CLOUD_LOGGING_ONLY
 
-#images:
-#  - 'gcr.io/$PROJECT_ID/$_RUN_NAME:$COMMIT_SHA'
 images:
-  - '$_RUN_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO_NAME/$_RUN_NAME'
+  - '$_RUN_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO_NAME/$_RUN_NAME:latest'
 
 substitutions:
   # Replace with the desired deployment region (I recommend us-central1)
@@ -104,6 +107,6 @@ substitutions:
   # Replace with the desired service account's email address (it's something like username@projectname-projectnumber.iam.gserviceaccount.com
   _SERVICE_ACCOUNT_NAME: 'mep-bot'
 
-  #   Uncomment the following substitutions block to finish setting up your job:
-##    Replace with the desired email address to get notifications from the alerts
+#     Uncomment the following substitutions block to finish setting up your job:
+#    Replace with the desired email address to get notifications from the alerts
 #  _EMAIL_ADDRESS: ''
